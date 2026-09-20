@@ -53,7 +53,7 @@ do
         end
         local area = CardArea(-40, -40, 1, 1, { type = "title", highlighted_limit = 1 })
         local card = create_card(false, area, false, false, true, false, key)
-        card.edition = nil
+        card.edition = {}
         local x = G.ROOM.T.w / 2 - card.T.w / 2
         local y = G.ROOM.T.h / 4 - card.T.h / 4
         card.T.x = x
@@ -90,21 +90,21 @@ do
                 end
                 local popup = card.children.h_popup
                 local info = popup and popup.UIRoot and popup.UIRoot.children and popup.UIRoot.children[1] and popup.UIRoot.children[1].children and popup.UIRoot.children[1].children.info
-                local function has_real_content(node)
+                local function has_ui_content(node)
                     if not node then return false end
                     if node.config and (node.config.text or node.config.scale or node.config.object) then
                         return true
                     end
                     if node.nodes then
                         for _, child in pairs(node.nodes) do
-                            if has_real_content(child) then
+                            if has_ui_content(child) then
                                 return true
                             end
                         end
                     end
                     return false
                 end
-                local effective_has_info = info ~= nil and info.definition and has_real_content(info.definition) and has_info_queue
+                local effective_has_info = info ~= nil and info.definition and has_ui_content(info.definition) and has_info_queue
                 local visited = {}
                 local function walk_simple(node)
                     if not node or visited[node] then
