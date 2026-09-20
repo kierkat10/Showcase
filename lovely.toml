@@ -1,0 +1,8 @@
+[manifest]
+version = "1.0.0"
+
+[[patches]]
+[patches.copy]
+target = "main.lua"
+position = "append"
+sources = ["showcase.lua"]
