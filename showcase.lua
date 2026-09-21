@@ -345,7 +345,7 @@ do
                                 },
                                 create_text_input({
                                     id = "showcase_full_input",
-                                    w = 4,
+                                    w = 3.5,
                                     h = 0.6,
                                     ref_table = showcase_config,
                                     ref_value = "full_input",
@@ -369,7 +369,7 @@ do
                                 },
                                 create_text_input({
                                     id = "showcase_set_input",
-                                    w = 2.5,
+                                    w = 2,
                                     h = 0.6,
                                     ref_table = showcase_config,
                                     ref_value = "set_input",
@@ -540,7 +540,6 @@ do
     G.FUNCS.showcase_save_as = function(e)
         if e and e.cycle_config then
             showcase_config.save_as = e.cycle_config.current_option == 1 and "key" or "name"
-            print("Save as changed to: " .. showcase_config.save_as .. " (option " .. e.cycle_config.current_option .. ")")
         end
     end
 
