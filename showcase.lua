@@ -53,7 +53,11 @@ do
         end
         local area = CardArea(-40, -40, 1, 1, { type = "title", highlighted_limit = 1 })
         local card = create_card(false, area, false, false, true, false, key)
-        card.edition = {}
+        if SMODS then
+            card:set_edition(nil, true, true)
+        else
+            card.edition = {}
+        end
         local x = G.ROOM.T.w / 2 - card.T.w / 2
         local y = G.ROOM.T.h / 4 - card.T.h / 4
         card.T.x = x
