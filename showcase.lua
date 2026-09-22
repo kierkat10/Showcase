@@ -317,6 +317,21 @@ do
         }
     end
 
+    G.SHOWCASE_FROM_COLLECTION = false
+    
+    G.FUNCS.showcase_collection = function()
+        G.SHOWCASE_FROM_COLLECTION = true
+        G.FUNCS.overlay_menu{
+            definition = create_UIBox_your_collection(),
+        }
+    end
+
+    G.FUNCS.showcase_collection_back = function()
+        G.SHOWCASE_FROM_COLLECTION = false
+        G.FUNCS.exit_overlay_menu()
+        G.FUNCS.open_showcase_menu()
+    end
+
     function G.UIDEF.showcase_menu()
         local scale = 0.8
         return create_UIBox_generic_options({
@@ -480,19 +495,61 @@ do
                         },
                         {
                             n = G.UIT.R,
-                            config = { align = "cm" },
+                            config = { align = "cm", padding = 0.1 },
                             nodes = {
                                 {
                                     n = G.UIT.C,
-                                    config = { align = "cm", minw = 5, minh = 1.5, r = 0.1, colour = G.C.BOOSTER, padding = 0.1, button = "showcase_trigger", hover = true, shadow = true },
+                                    config = {
+                                        align = "cm",
+                                        minw = 5,
+                                        minh = 1.5,
+                                        r = 0.1,
+                                        colour = G.C.BOOSTER,
+                                        padding = 0.1,
+                                        button = "showcase_trigger",
+                                        hover = true,
+                                        shadow = true
+                                    },
                                     nodes = {
                                         {
                                             n = G.UIT.T,
-                                            config = { text = "Showcase", scale = scale * 1.2, colour = G.C.UI.TEXT_LIGHT }
+                                            config = {
+                                                text = "Showcase",
+                                                scale = scale * 1.2,
+                                                colour = G.C.UI.TEXT_LIGHT
+                                            }
+                                        }
+                                    }
+                                },
+                                {
+                                    n = G.UIT.C,
+                                    config = {
+                                        align = "cm",
+                                        minw = 0.8,
+                                        minh = 1.5,
+                                        r = 0.1,
+                                        colour = G.C.PALE_GREEN,
+                                        padding = 0.1,
+                                        button = "showcase_collection",
+                                        hover = true,
+                                        shadow = true
+                                    },
+                                    nodes = {
+                                        {
+                                            n = G.UIT.T,
+                                            config = {
+                                                text = "COLLECTION",
+                                                scale = scale * 0.6,
+                                                maxh = 1.2,
+                                                colour = G.C.UI.TEXT_LIGHT,
+                                                vert = true,
+                                                silent = true,
+                                                shadow = true
+                                            }
                                         }
                                     }
                                 }
-                            },
+                            }
                         },
                         {
                             n = G.UIT.R,

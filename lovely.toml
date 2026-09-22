@@ -102,3 +102,11 @@ pattern = '''if hook.children[i].config and hook.children[i].config.id:sub(1, 7)
 position = 'at'
 payload = '''if hook.children[i].config and hook.children[i].config.id:sub(1, 8+string.len(G.CONTROLLER.text_input_id)) == G.CONTROLLER.text_input_id..'_letter_' and hook.children[i].config.text ~= '' then'''
 match_indent = true
+
+[[patches]]
+[patches.pattern]
+target = 'functions/UI_definitions.lua'
+pattern = '''local t = create_UIBox_generic_options({ back_func = G.STAGE == G.STAGES.RUN and 'options' or 'exit_overlay_menu', contents = {'''
+position = 'at'
+payload = '''local t = create_UIBox_generic_options({ back_func = G.SHOWCASE_FROM_COLLECTION and 'showcase_collection_back' or (G.STAGE == G.STAGES.RUN and 'options' or 'exit_overlay_menu'), contents = {'''
+match_indent = true
