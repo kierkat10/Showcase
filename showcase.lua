@@ -514,8 +514,8 @@ do
                                         {
                                             n = G.UIT.T,
                                             config = {
-                                                text = "Showcase",
-                                                scale = scale * 1.2,
+                                                text = "SHOWCASE",
+                                                scale = scale * 1.5,
                                                 colour = G.C.UI.TEXT_LIGHT
                                             }
                                         }
