@@ -11,13 +11,55 @@ do
         include_info_queue = true,
         include_card_art = true,
         delay = 1,
-        save_as = "key"
+        save_as = "key",
+        display_position = "below",
+        save_key = false
     }
 
     local showcase_active = false
     local showcase_all_active = false
     local escape_pressed = false
     local use_full_input = false
+    local showcase_save_atlas
+    local showcase_save_scale
+    local showcase_save_sprite
+
+    local function get_showcase_save_sprite()
+        if not showcase_save_atlas then
+            local function normalize_path(path)
+                return path:gsub("\\+", "/"):gsub("/+", "/"):gsub("/$", "")
+            end
+
+            local save_folder = normalize_path(love.filesystem.getSaveDirectory())
+            local mod_folder = normalize_path(require("lovely").mod_dir .. "/showcase")
+            local local_mod_folder = mod_folder:sub(#save_folder + 2)
+            local mount_point = "__showcase_assets"
+
+            if not love.filesystem.getInfo(mount_point .. "/save.png") then
+                assert(love.filesystem.mount(local_mod_folder, mount_point), "Failed to mount Showcase assets")
+            end
+
+            local file_data = love.filesystem.newFileData(mount_point .. "/save.png")
+            local image_data = love.image.newImageData(file_data)
+            local image = love.graphics.newImage(image_data, { mipmaps = false, dpiscale = 1 })
+            image:setFilter("nearest", "nearest")
+            local width, height = image:getDimensions()
+
+            showcase_save_atlas = {
+                name = "showcase_save",
+                image = image,
+                px = width,
+                py = height
+            }
+            G.ASSET_ATLAS.showcase_save = showcase_save_atlas
+            showcase_save_sprite = nil
+        end
+
+        if not showcase_save_sprite or showcase_save_sprite.REMOVED then
+            showcase_save_sprite = Sprite(0, 0, 0.42, 0.42, showcase_save_atlas, { x = 0, y = 0 })
+        end
+        return showcase_save_sprite
+    end
 
     local function clean_input(str)
         return (str or ""):gsub("^%s+", ""):gsub("%s+$", ""):gsub("^_+", ""):gsub("_+$", "")
@@ -89,23 +131,20 @@ do
         return name
     end
 
-    local function get_card_filename(card, key)
+    local function get_card_filename(object, key)
         if showcase_config.save_as == "key" then
             return key
         end
-        local center = card.config and card.config.center
-        local name = ""
-        if center and center.name then
-            name = center.name
-        else
-            name = get_name_from_table(card.ability_UIBox_table and card.ability_UIBox_table.name)
-        end
+        local center = object.config and object.config.center
+        local name = (center and center.name) or object.name
+            or get_name_from_table(object.ability_UIBox_table and object.ability_UIBox_table.name) or ""
         if name == "" then
             return key
         end
         local mod_name = "Balatro"
-        if center and center.mod then
-            mod_name = center.mod.display_name or center.mod.name or center.mod.id or mod_name
+        local mod = (center and center.mod) or object.mod
+        if mod then
+            mod_name = mod.display_name or mod.name or mod.id or mod_name
         end
         name = name .. " (" .. tostring(mod_name) .. ")"
         name = name:gsub('[\\/:*?"<>|]', "_")
@@ -144,14 +183,42 @@ do
     end
 
     local function showcase_hover(card)
-        card.ability_UIBox_table = card:generate_UIBox_ability_table()
-        card.config.h_popup = G.UIDEF.card_h_popup(card)
+        local center = card.config.center
+        if center and center.set == "Back" then
+            local back_center = setmetatable({
+                generate_ui = center.generate_ui or (SMODS and SMODS.Center and SMODS.Center.generate_ui),
+                set_card_type_badge = function(self, showcase_card, badges)
+                    badges[#badges + 1] = create_badge("Deck", HEX("4f6367"), G.C.WHITE, 1.2)
+                end
+            }, { __index = center })
+            card.config.center = back_center
+            local success, ability_UIBox_table, popup = pcall(function()
+                local ability_table = card:generate_UIBox_ability_table()
+                card.ability_UIBox_table = ability_table
+                return ability_table, G.UIDEF.card_h_popup(card)
+            end)
+            card.config.center = center
+            if not success then error(ability_UIBox_table) end
+            card.ability_UIBox_table = ability_UIBox_table
+            card.config.h_popup = popup
+        else
+            card.ability_UIBox_table = card:generate_UIBox_ability_table()
+            card.config.h_popup = G.UIDEF.card_h_popup(card)
+        end
         card.config.h_popup_config = card:align_h_popup()
+        if showcase_config.display_position == "to left" then
+            card.config.h_popup_config.major.offset.x = -card.T.w * 1.2
+        elseif showcase_config.display_position == "to right" then
+            card.config.h_popup_config.major.offset.x = card.T.w * 1.2
+        elseif showcase_config.display_position == "above" then
+            card.config.h_popup_config.major.offset.y = -card.T.h * 1.2
+        end
         Node.hover(card)
     end
 
     function showcase(key, delay, has_info_queue, has_card_art, return_to_menu)
         showcase_active = true
+        local blind = G.P_BLINDS and G.P_BLINDS[key]
         if G.CONTROLLER then
             G.CONTROLLER.dragging.target = nil
         end
@@ -168,22 +235,121 @@ do
             G.SPLASH_LOGO:remove()
             G.SPLASH_LOGO = nil
         end
-        local area = CardArea(-40, -40, 1, 1, { type = "title", highlighted_limit = 1 })
-        local card = create_card(false, area, false, false, true, false, key)
-        if SMODS then
-            card:set_edition(nil, true, true)
+        local card
+        local blind_popup
+        if blind then
+            local atlas_key = blind.atlas or "blind_chips"
+            local atlas = G.ASSET_ATLAS[atlas_key] or G.ANIMATION_ATLAS[atlas_key]
+
+            local sprite_class = Sprite
+            if atlas and atlas.atlas_table == "ANIMATION_ATLAS" then
+                sprite_class = AnimatedSprite
+            elseif atlas and atlas.atlas_table == "STATE_ATLAS" then
+                sprite_class = StateSprite
+            end
+
+            local blind_art = sprite_class(
+                0,
+                0,
+                1.4,
+                1.4,
+                atlas,
+                blind.pos
+            )
+            blind_art:define_draw_steps({
+                { shader = "dissolve", shadow_height = 0.05 },
+                { shader = "dissolve" }
+            })
+            local blind_art_node = {
+                n = G.UIT.C,
+                config = { align = "cm", padding = 0.1, minw = 1.4, minh = 1.4 },
+                nodes = {
+                    {
+                        n = G.UIT.O,
+                        config = {
+                            object = blind_art,
+                            w = 1.4,
+                            h = 1.4
+                        }
+                    }
+                }
+            }
+
+            local blind_text_node = {
+                n = G.UIT.C,
+                config = { align = "cm", padding = 0.1 },
+                nodes = { create_UIBox_blind_popup(blind, true) }
+            }
+
+            local layout_node
+            if has_card_art then
+                if showcase_config.display_position == "below" then
+                    layout_node = {
+                        n = G.UIT.C,
+                        config = { align = "cm", padding = 0.1 },
+                        nodes = { blind_art_node, blind_text_node }
+                    }
+                elseif showcase_config.display_position == "above" then
+                    layout_node = {
+                        n = G.UIT.C,
+                        config = { align = "cm", padding = 0.1 },
+                        nodes = { blind_text_node, blind_art_node }
+                    }
+                elseif showcase_config.display_position == "to left" then
+                    layout_node = {
+                        n = G.UIT.R,
+                        config = { align = "cm", padding = 0.1 },
+                        nodes = { blind_text_node, blind_art_node }
+                    }
+                else
+                    layout_node = {
+                        n = G.UIT.R,
+                        config = { align = "cm", padding = 0.1 },
+                        nodes = { blind_art_node, blind_text_node }
+                    }
+                end
+            else
+                layout_node = blind_text_node
+            end
+            blind_popup = UIBox({
+                definition = {
+                    n = G.UIT.ROOT,
+                    config = { align = "cm", colour = G.C.CLEAR, padding = 0.1 },
+                    nodes = { layout_node }
+                },
+                config = { align = "cm", offset = { x = 0, y = 0 }, major = G.ROOM_ATTACH, bond = "Weak" }
+            })
         else
-            card.edition = {}
+            local area = CardArea(-40, -40, 1, 1, { type = "title", highlighted_limit = 1 })
+            card = create_card(false, area, false, false, true, false, key)
+            if SMODS then
+                card:set_edition(nil, true, true)
+            else
+                card.edition = {}
+            end
+            local x, y
+            local offset = math.min(G.ROOM.T.w, G.ROOM.T.h) * 0.25
+            if showcase_config.display_position == "below" then
+                x = G.ROOM.T.w / 2 - card.T.w / 2
+                y = G.ROOM.T.h / 2 - offset - card.T.h / 2
+            elseif showcase_config.display_position == "above" then
+                x = G.ROOM.T.w / 2 - card.T.w / 2
+                y = G.ROOM.T.h / 2 + offset - card.T.h / 2
+            elseif showcase_config.display_position == "to left" then
+                x = G.ROOM.T.w / 2 + offset - card.T.w / 2
+                y = G.ROOM.T.h / 2 - card.T.h / 2
+            elseif showcase_config.display_position == "to right" then
+                x = G.ROOM.T.w / 2 - offset - card.T.w / 2
+                y = G.ROOM.T.h / 2 - card.T.h / 2
+            end
+            card.T.x = x
+            card.T.y = y
+            card.VT.x = x
+            card.VT.y = y
+            -- prevent the user from hovering over the card
+            card.states.hover.can = false
+            showcase_hover(card)
         end
-        local x = G.ROOM.T.w / 2 - card.T.w / 2
-        local y = G.ROOM.T.h / 4 - card.T.h / 4
-        card.T.x = x
-        card.T.y = y
-        card.VT.x = x
-        card.VT.y = y
-        -- prevent the user from hovering over the card
-        card.states.hover.can = false
-        showcase_hover(card)
         G.E_MANAGER:add_event(Event({
             trigger = "after",
             delay = delay,
@@ -191,7 +357,12 @@ do
                 local scale = (G.TILESCALE or 1) * (G.TILESIZE or 20)
                 local screen_w, screen_h = love.graphics.getDimensions()
                 local left, right, top, bottom
-                if has_card_art then
+                if blind then
+                    left = math.huge
+                    right = -math.huge
+                    top = math.huge
+                    bottom = -math.huge
+                elseif has_card_art then
                     left = card.T.x
                     right = card.T.x + card.T.w
                     top = card.T.y
@@ -226,9 +397,9 @@ do
                     return false
                 end
 
-                local popup = card.children.h_popup
-                local info = popup and popup.UIRoot and popup.UIRoot.children and popup.UIRoot.children[1] and popup.UIRoot.children[1].children and popup.UIRoot.children[1].children.info
-                local effective_has_info = info ~= nil and info.definition and has_ui_content(info.definition) and has_info_queue
+                local popup = blind_popup or (card and card.children.h_popup)
+                local info = (not blind and popup and popup.UIRoot and popup.UIRoot.children and popup.UIRoot.children[1] and popup.UIRoot.children[1].children and popup.UIRoot.children[1].children.info) or nil
+                local effective_has_info = type(info) == "table" and info.definition and has_ui_content(info.definition) and has_info_queue
                 local visited = {}
 
                 local function walk(node)
@@ -271,23 +442,30 @@ do
                         local cropped = love.image.newImageData(w, h)
                         cropped:paste(image, 0, 0, x, y, w, h)
                         love.filesystem.createDirectory("Showcase")
-                        local filename = get_card_filename(card, key)
+                        local filename = get_card_filename(blind or card, key)
                         cropped:encode("png", "Showcase/" .. filename .. ".png" )
                         print("Showcase saved to " .. love.filesystem.getSaveDirectory() .. "/Showcase/" .. filename .. ".png")
-                        card:stop_hover()
-                        card:remove()
+                        if card then
+                            card:stop_hover()
+                            card:remove()
+                        end
+                        if blind_popup then
+                            blind_popup:remove()
+                        end
                         if return_to_menu then
-                            if use_full_input then
-                                update_full_input()
-                                local set_input = clean_input(showcase_config.set_input)
-                                local mod_input = clean_input(showcase_config.mod_input)
-                                if mod_input == "" then
-                                    showcase_config.full_input = set_input .. "_"
+                            if not showcase_config.save_key then
+                                if use_full_input then
+                                    update_full_input()
+                                    local set_input = clean_input(showcase_config.set_input)
+                                    local mod_input = clean_input(showcase_config.mod_input)
+                                    if mod_input == "" then
+                                        showcase_config.full_input = set_input .. "_"
+                                    else
+                                        showcase_config.full_input = set_input .. "_" .. mod_input .. "_"
+                                    end
                                 else
-                                    showcase_config.full_input = set_input .. "_" .. mod_input .. "_"
+                                    showcase_config.key_input = ""
                                 end
-                            else
-                                showcase_config.key_input = ""
                             end
                             G.FUNCS.open_showcase_menu()
                         end
@@ -367,7 +545,35 @@ do
                                     prompt_text = "Full Key (e.g. j_joker)",
                                     extended_corpus = true,
                                     max_length = 100
-                                })
+                                }),
+                                {
+                                    n = G.UIT.C,
+                                    config = { align = "cm" },
+                                    nodes = {
+                                        UIBox_button({
+                                            label = { "x" },
+                                            button = "clear_showcase_full_input",
+                                            colour = G.C.BLUE,
+                                            minw = 0.5,
+                                            minh = 0.6
+                                        })
+                                    }
+                                },
+                                -- spacing
+                                {
+                                    n = G.UIT.C,
+                                    config = { padding = 0.1 }
+                                },
+                                {
+                                    n = G.UIT.C,
+                                    config = { align = "cm", minw = 0.6, minh = 0.6, r = 0.1, colour = showcase_config.save_key and G.C.ORANGE or G.C.GREY, padding = 0.1, button = "showcase_toggle_save_key", hover = true, shadow = true },
+                                    nodes = {
+                                        {
+                                            n = G.UIT.O,
+                                            config = { object = get_showcase_save_sprite(), w = 0.42, h = 0.42, focus_with_object = true }
+                                        }
+                                    }
+                                }
                             } or {
                                 {
                                     n = G.UIT.C,
@@ -411,7 +617,35 @@ do
                                     prompt_text = "Key (e.g. joker)",
                                     extended_corpus = true,
                                     max_length = 100
-                                })
+                                }),
+                                {
+                                    n = G.UIT.C,
+                                    config = { align = "cm" },
+                                    nodes = {
+                                        UIBox_button({
+                                            label = { "x" },
+                                            button = "clear_showcase_all_inputs",
+                                            colour = G.C.BLUE,
+                                            minw = 0.5,
+                                            minh = 0.6
+                                        })
+                                    }
+                                },
+                                -- spacing
+                                {
+                                    n = G.UIT.C,
+                                    config = { padding = 0.1 }
+                                },
+                                {
+                                    n = G.UIT.C,
+                                    config = { align = "cm", minw = 0.6, minh = 0.6, r = 0.1, colour = showcase_config.save_key and G.C.ORANGE or G.C.GREY, padding = 0.1, button = "showcase_toggle_save_key", hover = true, shadow = true },
+                                    nodes = {
+                                        {
+                                            n = G.UIT.O,
+                                            config = { object = get_showcase_save_sprite(), w = 0.42, h = 0.42, focus_with_object = true }
+                                        }
+                                    }
+                                }
                             }
                         },
                         {
@@ -428,7 +662,7 @@ do
                                 },
                                 {
                                     n = G.UIT.C,
-                                    config = { align = "cm", padding = 0.1 },
+                                    config = { align = "cm" },
                                     nodes = {
                                         create_slider({
                                             ref_table = showcase_config,
@@ -449,7 +683,7 @@ do
                         },
                         {
                             n = G.UIT.R,
-                            config = { align = "cm", padding = 0.2 },
+                            config = { align = "cm", padding = 0.1 },
                             nodes = {
                                 {
                                     n = G.UIT.C,
@@ -457,7 +691,7 @@ do
                                     nodes = {
                                         {
                                             n = G.UIT.T,
-                                            config = { text = "Include Info Queues", scale = scale * 0.7, colour = G.C.UI.TEXT_LIGHT }
+                                            config = { text = "Include Info Queues", scale = scale * 0.6, colour = G.C.UI.TEXT_LIGHT }
                                         }
                                     }
                                 },
@@ -467,11 +701,26 @@ do
                                     nodes = {
                                         {
                                             n = G.UIT.T,
-                                            config = { text = "Include Card Art", scale = scale * 0.7, colour = G.C.UI.TEXT_LIGHT }
+                                            config = { text = "Include Card Art", scale = scale * 0.6, colour = G.C.UI.TEXT_LIGHT }
                                         }
                                     }
                                 }
                             }
+                        },
+                        {
+                            n = G.UIT.R,
+                            config = { align = "cm" },
+                            nodes = showcase_config.include_card_art and {
+                                create_option_cycle({
+                                    label = "Display Textbox",
+                                    scale = 0.8,
+                                    options = { "Below", "Above", "To Left", "To Right" },
+                                    opt_callback = "showcase_display_position",
+                                    current_option = showcase_config.display_position == "below" and 1 or showcase_config.display_position == "above" and 2 or showcase_config.display_position == "to left" and 3 or 4,
+                                    w = 4,
+                                    h = 0.6
+                                })
+                            } or {}
                         },
                         {
                             n = G.UIT.R,
@@ -487,11 +736,6 @@ do
                                     h = 0.6
                                 })
                             }
-                        },
-                        {
-                            n = G.UIT.R,
-                            config = { align = "cm", padding = 0.2 },
-                            nodes = { }
                         },
                         {
                             n = G.UIT.R,
@@ -581,6 +825,7 @@ do
     G.FUNCS.showcase_toggle_card_art = function(e)
         showcase_config.include_card_art = not showcase_config.include_card_art
         e.config.colour = showcase_config.include_card_art and G.C.ORANGE or G.C.GREY
+        G.FUNCS.open_showcase_menu()
     end
 
     G.FUNCS.toggle_showcase_input = function(e)
@@ -598,6 +843,30 @@ do
         if e and e.cycle_config then
             showcase_config.save_as = e.cycle_config.current_option == 1 and "key" or "name"
         end
+    end
+
+    G.FUNCS.showcase_display_position = function(e)
+        if e and e.cycle_config then
+            local option = e.cycle_config.current_option
+            showcase_config.display_position = option == 1 and "below" or option == 2 and "above" or option == 3 and "to left" or "to right"
+        end
+    end
+
+    G.FUNCS.clear_showcase_full_input = function()
+        showcase_config.full_input = ""
+        G.FUNCS.open_showcase_menu()
+    end
+
+    G.FUNCS.clear_showcase_all_inputs = function()
+        showcase_config.set_input = ""
+        showcase_config.mod_input = ""
+        showcase_config.key_input = ""
+        G.FUNCS.open_showcase_menu()
+    end
+
+    G.FUNCS.showcase_toggle_save_key = function(e)
+        showcase_config.save_key = not showcase_config.save_key
+        e.config.colour = showcase_config.save_key and G.C.ORANGE or G.C.GREY
     end
 
     G.FUNCS.showcase_back_to_main = function(e)
@@ -634,9 +903,10 @@ do
             key_input = showcase_config.key_input or ""
         end
 
+        local key_set_input = set_input:lower() == "blind" and "bl" or set_input
         local cleaned_key = ""
         if set_input ~= "" then
-            cleaned_key = set_input
+            cleaned_key = key_set_input
         end
         if mod_input ~= "" then
             cleaned_key = cleaned_key ~= "" and cleaned_key .. "_" .. mod_input or mod_input
@@ -646,16 +916,19 @@ do
         end
         cleaned_key = cleaned_key:gsub('"', ""):gsub("'", "")
         if cleaned_key == "" then return end
-        local test_area = CardArea(-40, -40, 1, 1, {
-            type = "title",
-            highlighted_limit = 1
-        })
-        local success, test_card = pcall(create_card, false, test_area, false, false, true, false, cleaned_key)
-        if not success or not test_card or not test_card.config or not test_card.config.center then
-            print("\"" .. cleaned_key .. "\" is not a valid key.")
-            return
+        local blind = G.P_BLINDS and G.P_BLINDS[cleaned_key]
+        if not blind then
+            local test_area = CardArea(-40, -40, 1, 1, {
+                type = "title",
+                highlighted_limit = 1
+            })
+            local success, test_card = pcall(create_card, false, test_area, false, false, true, false, cleaned_key)
+            if not success or not test_card or not test_card.config or not test_card.config.center then
+                print("\"" .. cleaned_key .. "\" is not a valid key.")
+                return
+            end
+            test_card:remove()
         end
-        test_card:remove()
         G.FUNCS.exit_overlay_menu()
         showcase(
             cleaned_key,
@@ -678,11 +951,12 @@ do
             mod_input = clean_input(showcase_config.mod_input)
         end
         if set_input == "" then return end
+        local prefix_set = set_input:lower() == "blind" and "bl" or set_input
         local prefix
         if mod_input == "" then
-            prefix = set_input .. "_"
+            prefix = prefix_set .. "_"
         else
-            prefix = set_input .. "_" .. mod_input .. "_"
+            prefix = prefix_set .. "_" .. mod_input .. "_"
         end
         local matching_keys = {}
         if G.P_CENTER_POOLS then
@@ -693,6 +967,13 @@ do
                             table.insert(matching_keys, center.key)
                         end
                     end
+                end
+            end
+        end
+        if prefix_set == "bl" and G.P_BLINDS then
+            for blind_key in pairs(G.P_BLINDS) do
+                if blind_key:sub(1, #prefix) == prefix then
+                    table.insert(matching_keys, blind_key)
                 end
             end
         end
