@@ -21,7 +21,6 @@ do
     local escape_pressed = false
     local use_full_input = false
     local showcase_save_atlas
-    local showcase_save_scale
     local showcase_save_sprite
 
     local function get_showcase_save_sprite()
