@@ -516,7 +516,7 @@ do
             contents = {
                 {
                     n = G.UIT.C,
-                    config = { align = "cm", padding = 0.2 },
+                    config = { align = "cm", padding = 0.1 },
                     nodes = {
                         {
                             n = G.UIT.R,
