@@ -187,7 +187,7 @@ do
             local back_center = setmetatable({
                 generate_ui = center.generate_ui or (SMODS and SMODS.Center and SMODS.Center.generate_ui),
                 set_card_type_badge = function(self, showcase_card, badges)
-                    badges[#badges + 1] = create_badge("Deck", HEX("4f6367"), G.C.WHITE, 1.2)
+                    badges[#badges + 1] = nil
                 end
             }, { __index = center })
             card.config.center = back_center
